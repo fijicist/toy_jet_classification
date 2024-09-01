@@ -5,4 +5,5 @@ This directory will contain the CMS2011AJets MOD Dataset which might be used in 
 1) import_dataset.py - This module is to import the CMS2011AJets Dataset and making it ready for input into the EEC module
 2) graph_constructor.py - This module will construct the PyG graphs for particles in a jet from a dataset and save it to the graph_objects
 3) ml_analysis.py - This module runs the ML classification task and the GCN model is also defined here.
-4) metrics_plot - Contains the plot for losses, accuracies, and roc curve
+4) utils.py - Contains some utility functions like calculating EEC values for a dataset
+5) metrics_plot - Contains the plot for losses, accuracies, and roc curve
