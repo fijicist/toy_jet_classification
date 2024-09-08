@@ -34,12 +34,8 @@ def _construct_particle_graphs_pyg(
     print(f'Constructing PyG particle graphs from energyflow dataset...')
 
     # Load dataset
-    if not additional_node_attrs and not additional_edge_attrs and not additional_graph_attrs and not additional_hypergraph_attrs:
-        X, y = energyflow.qg_jets.load(N)
-        X = X[:,:,:3]
-        print(f'  (n_jets, n_particles, features): {X.shape}')
 
-    elif additional_edge_attrs == 'eec_with_charges':
+    if additional_edge_attrs == 'eec_with_charges':
         X, y = energyflow.qg_jets.load(N, pad=False)
         for i in range(len(X)):
             X[i][:, 3] = energyflow.pids2chrgs(X[i][:, 3])
@@ -49,13 +45,17 @@ def _construct_particle_graphs_pyg(
         for i in range(len(X)):
             X[i] = X[i][:, :3]
 
+    else:
+        X, y = energyflow.qg_jets.load(N)
+        X = X[:,:,:3]
+        print(f'  (n_jets, n_particles, features): {X.shape}')
 
     # Preprocess by centering jets and normalizing pts
-    # for x in tqdm.tqdm(X, desc='  Preprocessing jets', total=len(X)):
-    #     mask = x[:,0] > 0
-    #     yphi_avg = np.average(x[mask,1:3], weights=x[mask,0], axis=0)
-    #     x[mask,1:3] -= yphi_avg
-    #     x[mask,0] /= x[:,0].sum()
+    for x in tqdm.tqdm(X, desc='  Preprocessing jets', total=len(X)):
+        mask = x[:,0] > 0
+        yphi_avg = np.average(x[mask,1:3], weights=x[mask,0], axis=0)
+        x[mask,1:3] -= yphi_avg
+        x[mask,0] /= x[:,0].sum()
 
     # Calculate EnergyEnergyCorrelation (EEC) features
     if additional_edge_attrs == 'eec_with_charges':
@@ -119,14 +119,12 @@ def _construct_particle_graph_pyg(
     # Construct graph as PyG data object
     graph_label = torch.tensor(label, dtype=torch.bool)
 
-    print(x, x.shape)
-    #exit()
 
     # Add additional attributes if provided
     # if additional_node_attrs:
     #     graph.node_attrs = torch.tensor(additional_node_attrs, dtype=torch.float)
 
-    if additional_edge_attrs:
+    if additional_edge_attrs == 'eec_with_charges' or additional_edge_attrs == 'eec_without_charges':
         # Calculate edge features
         edge_features = []
         for i, j in zip(row, col):
@@ -136,6 +134,7 @@ def _construct_particle_graph_pyg(
             # Determine the bin for the edge value
             bin_index = np.digitize(delta_R, bins=additional_edge_attrs.bin_edges()) - 1
             print(additional_edge_attrs.bin_edges(), bin_index, delta_R, additional_edge_attrs.get_hist_errs(0, False)[0])
+            exit()
             # Get the histogram value for the bin
             edge_feature = additional_edge_attrs.get_hist_errs(0, False)[0][bin_index]
             edge_features.append(edge_feature)
@@ -157,4 +156,4 @@ def _construct_particle_graph_pyg(
 
 #_construct_particle_graphs_pyg("./graph_objects/particle_graphs/.", ['fully_connected'], 100000)
 
-_construct_particle_graphs_pyg("./graph_objects/particle_graphs/.", ['fully_connected'], 100000, additional_edge_attrs='eec_with_charges')
+# _construct_particle_graphs_pyg("./graph_objects/particle_graphs/.", ['fully_connected'], 100000, additional_edge_attrs='eec_with_charges')

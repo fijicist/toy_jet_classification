@@ -47,12 +47,21 @@ class GCNModel(nn.Module):
         return x
 
 class MLAnalysis:
-    def __init__(self, input_dim, hidden_dim, output_dim, learning_rate=0.01, epochs=100, model_output_path='./trained_models', metrics_plot_path='./metrics_plot'):
+    def __init__(self, 
+                 input_dim,
+                 hidden_dim,
+                 output_dim,
+                 batch_size=1024,
+                 learning_rate=0.01,
+                 epochs=100,
+                 model_output_path='./trained_models',
+                 metrics_plot_path='./metrics_plot'
+    ):
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.output_dim = output_dim
         self.learning_rate = learning_rate
-        self.batch_size = 1024
+        self.batch_size = batch_size
         self.epochs = epochs
         self.model_output_path = model_output_path
         self.metrics_plot_path = metrics_plot_path
@@ -221,9 +230,9 @@ class MLAnalysis:
 
         plt.savefig("./metrics_plot/metrics_plot.png")
 
-analysis = MLAnalysis(3, 16, 2, learning_rate=0.0003, epochs=50)
-
-analysis.load_data()
-
-analysis.train()
-analysis.display_metrics()
+# analysis = MLAnalysis(3, 16, 2, batch_size=1024, learning_rate=0.0003, epochs=50)
+#
+# analysis.load_data()
+#
+# analysis.train()
+# analysis.display_metrics()
