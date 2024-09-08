@@ -1,0 +1,5 @@
+# ignore all .pt files
+*.pt
+
+# ignore all .h5 files
+*.h5
