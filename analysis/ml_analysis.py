@@ -6,11 +6,41 @@ from sklearn import metrics
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch_geometric.nn import GCNConv, global_mean_pool
+from torch_geometric.nn import GCNConv, GATConv, global_mean_pool
 from torch.utils.data import random_split
 from torch_geometric.loader import DataLoader
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+
+class GAT(torch.nn.Module):
+    def __init__(self, n_input_features, hidden_dim, n_output_classes, dropout_rate=0.5):
+        super(GAT, self).__init__()
+        self.head = 8
+
+        self.conv1 = GATConv(n_input_features, hidden_dim, heads=self.head, dropout=dropout_rate)
+        self.conv2 = GATConv(hidden_dim * self.head, hidden_dim, heads=self.head, dropout=dropout_rate)
+
+        # Dropout layer (by default, only active during training -- i.e. disabled with mode.eval() )
+        self.dropout = nn.Dropout(p=dropout_rate)
+
+        self.lin = nn.Linear(hidden_dim * self.head, n_output_classes)
+
+    def forward(self, x, edge_index, batch):
+        
+        # GNN layers
+        x = self.conv1(x, edge_index)
+        x = F.relu(x)
+        x = self.dropout(x)
+    
+        x = self.conv2(x, edge_index)
+        x = F.relu(x)
+        x = self.dropout(x)
+
+        x = global_mean_pool(x, batch)
+
+        x = self.lin(x)
+
+        return F.softmax(x, dim=1)
 
 class GCNModel(nn.Module):
     def __init__(self, n_input_features, hidden_dim, n_output_classes, dropout_rate=0.5):
@@ -44,13 +74,15 @@ class GCNModel(nn.Module):
         # Fully connected layer for graph classification
         # Note: For now, we don't apply dropout here, since the dimension is small
         x = self.fc(x)
-        return x
+
+        return F.softmax(x, dim=1)
 
 class MLAnalysis:
     def __init__(self, 
                  input_dim,
                  hidden_dim,
                  output_dim,
+                 model="GCN",
                  batch_size=1024,
                  learning_rate=0.01,
                  epochs=100,
@@ -66,7 +98,10 @@ class MLAnalysis:
         self.model_output_path = model_output_path
         self.metrics_plot_path = metrics_plot_path
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.model = GCNModel(input_dim, hidden_dim, output_dim).to(self.device)
+        if model == "GCN":
+            self.model = GCNModel(input_dim, hidden_dim, output_dim).to(self.device)
+        elif model == "GAT":
+            self.model = GAT(input_dim, hidden_dim, output_dim).to(self.device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
         self.criterion = nn.CrossEntropyLoss()
         self.train_losses = np.zeros(epochs)
@@ -156,7 +191,8 @@ class MLAnalysis:
         else:
             print(f"Directory {self.model_output_path} already exists.")
 
-        torch.save(self.model.state_dict(), os.path.join(self.model_output_path, 'gcn_model.pth')) 
+        torch.save(self.model.state_dict(), os.path.join(self.model_output_path,\
+        f'{self.input_dim}_{self.hidden_dim}_{self.model.__class__.__name__}_{self.batch_size}_{self.learning_rate}_{self.epochs}.pt'))
 
 
     def evaluate(self):
@@ -228,11 +264,12 @@ class MLAnalysis:
         else:
             print(f"Directory {self.metrics_plot_path} already exists.")
 
-        plt.savefig("./metrics_plot/metrics_plot.png")
+        plt.savefig("./metrics_plot/metrics_plot"+"_"+str(self.input_dim)+"_"+\
+            str(self.hidden_dim)+"_"+str(self.model.__class__.__name__)+"_"+str(self.batch_size)+"_"+str(self.learning_rate)+".png")
 
-# analysis = MLAnalysis(3, 16, 2, batch_size=1024, learning_rate=0.0003, epochs=50)
-#
-# analysis.load_data()
-#
-# analysis.train()
-# analysis.display_metrics()
+analysis = MLAnalysis(4, 8, 2, model="GAT", batch_size=256, learning_rate=0.0001, epochs=50)
+
+analysis.load_data()
+
+analysis.train()
+analysis.display_metrics()

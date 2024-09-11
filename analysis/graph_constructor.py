@@ -17,7 +17,7 @@ def _construct_particle_graphs_pyg(
         output_dir,
         graph_structures,
         N=500000,
-        eec_prop=[2, 50, (1e-3, 1)], # [N, bins, (R_Lmin, R_Lmax)]
+        eec_prop=[2, 50, (1e-3, 2)], # [N, bins, (R_Lmin, R_Lmax)]
         additional_node_attrs=None,
         additional_edge_attrs=None, # None or eec_with_charges or eec_without_charges
         additional_graph_attrs=None,
@@ -124,7 +124,7 @@ def _construct_particle_graph_pyg(
     # if additional_node_attrs:
     #     graph.node_attrs = torch.tensor(additional_node_attrs, dtype=torch.float)
 
-    if additional_edge_attrs == 'eec_with_charges' or additional_edge_attrs == 'eec_without_charges':
+    if additional_edge_attrs:
         # Calculate edge features
         edge_features = []
         for i, j in zip(row, col):
@@ -133,13 +133,23 @@ def _construct_particle_graph_pyg(
             delta_R = np.sqrt(delta_y**2 + delta_phi**2)
             # Determine the bin for the edge value
             bin_index = np.digitize(delta_R, bins=additional_edge_attrs.bin_edges()) - 1
-            print(additional_edge_attrs.bin_edges(), bin_index, delta_R, additional_edge_attrs.get_hist_errs(0, False)[0])
-            exit()
+
+            # print(additional_edge_attrs.bin_edges(), bin_index, delta_R, additional_edge_attrs.get_hist_errs(0, False)[0])
+            # exit()
+
             # Get the histogram value for the bin
             edge_feature = additional_edge_attrs.get_hist_errs(0, False)[0][bin_index]
             edge_features.append(edge_feature)
 
         edge_features_tensor = torch.tensor(edge_features, dtype=torch.float).view(-1, 1)
+
+        # # Zero pad edge_features_tensor to match the dimension of edge_indices_long
+        # if edge_features_tensor.size(0) < edge_indices_long.size(1):
+        #     padding_size = edge_indices_long.size(1) - edge_features_tensor.size(0)
+        #     edge_features_tensor = torch.nn.functional.pad(edge_features_tensor, (0, 0, 0, padding_size))
+
+        # print(edge_features_tensor, edge_indices_long, edge_features_tensor.size(), edge_indices_long.size())
+        # exit()
 
         graph = torch_geometric.data.Data(x=node_features, edge_index=edge_indices_long, edge_attr=edge_features_tensor, y=graph_label)
 
