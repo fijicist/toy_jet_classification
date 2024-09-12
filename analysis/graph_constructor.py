@@ -17,7 +17,7 @@ def _construct_particle_graphs_pyg(
         output_dir,
         graph_structures,
         N=500000,
-        eec_prop=[2, 50, (1e-3, 2)], # [N, bins, (R_Lmin, R_Lmax)]
+        eec_prop=[[2, 3, 4, 5], 50, (1e-3, 2)], # [N, bins, (R_Lmin, R_Lmax)]
         additional_node_attrs=None,
         additional_edge_attrs=None, # None or eec_with_charges or eec_without_charges
         additional_graph_attrs=None,
@@ -60,12 +60,17 @@ def _construct_particle_graphs_pyg(
     # Calculate EnergyEnergyCorrelation (EEC) features
     if additional_edge_attrs == 'eec_with_charges':
         print(f'  Calculating EEC features with charges...')
-        additional_edge_attrs = get_eec_ls_values(X, N=eec_prop[0], bins=eec_prop[1], axis_range=eec_prop[2])
+        additional_edge_attrs = []
+        for i in range(len(eec_prop[0])):
+            additional_edge_attrs.append(get_eec_ls_values(X, N=eec_prop[0][i], bins=eec_prop[1], axis_range=eec_prop[2]))
 
     if additional_edge_attrs == 'eec_without_charges':
         print(f'  Calculating EEC features without charges...')
-        additional_edge_attrs = get_eec_ls_values(X, N=eec_prop[0], bins=eec_prop[1], axis_range=eec_prop[2])
+        additional_edge_attrs = []
+        for i in range(len(eec_prop[0])):
+            additional_edge_attrs.append(get_eec_ls_values(X, N=eec_prop[0][i], bins=eec_prop[1], axis_range=eec_prop[2]))
 
+    # Create output directory if it doesn't exist
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
         print(f"Directory '{output_dir}' created successfully.")
@@ -126,22 +131,24 @@ def _construct_particle_graph_pyg(
 
     if additional_edge_attrs:
         # Calculate edge features
-        edge_features = []
+        edge_features = [[] for _ in range(len(additional_edge_attrs))]
         for i, j in zip(row, col):
             delta_y = x[i][1] - x[j][1]
             delta_phi = x[i][2] - x[j][2]
             delta_R = np.sqrt(delta_y**2 + delta_phi**2)
             # Determine the bin for the edge value
-            bin_index = np.digitize(delta_R, bins=additional_edge_attrs.bin_edges()) - 1
+            bin_index = np.digitize(delta_R, bins=additional_edge_attrs[0].bin_edges()) - 1
 
             # print(additional_edge_attrs.bin_edges(), bin_index, delta_R, additional_edge_attrs.get_hist_errs(0, False)[0])
             # exit()
 
             # Get the histogram value for the bin
-            edge_feature = additional_edge_attrs.get_hist_errs(0, False)[0][bin_index]
-            edge_features.append(edge_feature)
+            for i in range(len(additional_edge_attrs)):
+                edge_features[i].append(additional_edge_attrs[i].get_hist_errs(0, False)[0][bin_index])
 
-        edge_features_tensor = torch.tensor(edge_features, dtype=torch.float).view(-1, 1)
+
+        edge_features_tensor = torch.tensor(edge_features, dtype=torch.float)
+        edge_features_tensor = edge_features_tensor.t() # Transpose to dim (n_edges, n_features)
 
         # # Zero pad edge_features_tensor to match the dimension of edge_indices_long
         # if edge_features_tensor.size(0) < edge_indices_long.size(1):
@@ -166,4 +173,4 @@ def _construct_particle_graph_pyg(
 
 #_construct_particle_graphs_pyg("./graph_objects/particle_graphs/.", ['fully_connected'], 100000)
 
-# _construct_particle_graphs_pyg("./graph_objects/particle_graphs/.", ['fully_connected'], 100000, additional_edge_attrs='eec_with_charges')
+_construct_particle_graphs_pyg("./graph_objects/particle_graphs/.", ['fully_connected'], 100000, additional_edge_attrs='eec_with_charges')
