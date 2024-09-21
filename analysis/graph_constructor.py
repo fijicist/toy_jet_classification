@@ -4,11 +4,16 @@ The graph_constructor module constructs the input graphs to the ML analysis:
 """
 
 import os
+import gc
 import tqdm
 import numpy as np
 import energyflow
 import torch
 import torch_geometric
+
+import fastjet
+import vector
+import awkward as ak
 
 from import_dataset import import_CMS2011AJets_dataset
 from utils import get_eec_ls_values
@@ -17,7 +22,7 @@ def _construct_particle_graphs_pyg(
         output_dir,
         graph_structures,
         N=500000,
-        eec_prop=[[2, 3, 4, 5], 50, (1e-3, 2)], # [N, bins, (R_Lmin, R_Lmax)]
+        eec_prop=[[2, 3], 50, (1e-3, 2)], # [N, bins, (R_Lmin, R_Lmax)]
         additional_node_attrs=None,
         additional_edge_attrs=None, # None or eec_with_charges or eec_without_charges
         additional_graph_attrs=None,
@@ -50,12 +55,44 @@ def _construct_particle_graphs_pyg(
         X = X[:,:,:3]
         print(f'  (n_jets, n_particles, features): {X.shape}')
 
-    # Preprocess by centering jets and normalizing pts
-    for x in tqdm.tqdm(X, desc='  Preprocessing jets', total=len(X)):
-        mask = x[:,0] > 0
-        yphi_avg = np.average(x[mask,1:3], weights=x[mask,0], axis=0)
-        x[mask,1:3] -= yphi_avg
-        x[mask,0] /= x[:,0].sum()
+    # # Preprocess by centering jets and normalizing pts
+    # for x in tqdm.tqdm(X, desc='  Preprocessing jets', total=len(X)):
+    #     mask = x[:,0] > 0
+    #     yphi_avg = np.average(x[mask,1:3], weights=x[mask,0], axis=0)
+    #     x[mask,1:3] -= yphi_avg
+    #     x[mask,0] /= x[:,0].sum()
+
+    # Reclustering the jets using fastjet to check the clustering
+    print(f'  Reclustering jets using fastjet...')
+
+    for i in range(len(X)):
+        X[i] = energyflow.p4s_from_ptyphipids(X[i])
+        X[i] = X[i].astype(np.float64)
+
+    X = np.concatenate(X, axis=0)
+    
+    # Input to fastjet as an awkward array
+    particleAwk = ak.zip({"E": X[:, 0], "px": X[:, 1], "py": X[:, 2], "pz": X[:, 3]})
+
+    # Free memory by deleting the original X
+    del X
+    gc.collect()
+
+    # Jet clustering definition
+    jet_def = fastjet.JetDefinition(fastjet.antikt_algorithm, 0.4)
+
+    # Clustering
+    cs = fastjet.ClusterSequence(particleAwk, jet_def)
+    print(f"The inclusive jets are: {cs.inclusive_jets()}\n")
+    print(f"No of jets: {len(cs.inclusive_jets())}\n")
+    for i in range(len(cs.inclusive_jets())-1, len(cs.inclusive_jets())-12, -1):
+        print(f"Jet {i}: {cs.inclusive_jets()[i]}\n")
+    # for i in range (len(cs.inclusive_jets())):
+    #     print(f"Jet {i}: {cs.constituents()}")
+    print(f"Unclustered particles: {cs.unclustered_particles()}\nChildless_pseudojets: {cs.childless_pseudojets()}\nConstituents: {cs.constituents()}")
+    exit()
+    # print(cs.inclusive_jets()[:10], len(cs.inclusive_jets()), len(cs.unclustered_particles()))
+    # exit()
 
     # Calculate EnergyEnergyCorrelation (EEC) features
     if additional_edge_attrs == 'eec_with_charges':
@@ -136,6 +173,8 @@ def _construct_particle_graph_pyg(
             delta_y = x[i][1] - x[j][1]
             delta_phi = x[i][2] - x[j][2]
             delta_R = np.sqrt(delta_y**2 + delta_phi**2)
+            if delta_R > 0.7:
+                print(f"delta_R: {delta_R}, delta_y: {delta_y}, delta_phi: {delta_phi}")
             # Determine the bin for the edge value
             bin_index = np.digitize(delta_R, bins=additional_edge_attrs[0].bin_edges()) - 1
 
@@ -173,4 +212,4 @@ def _construct_particle_graph_pyg(
 
 #_construct_particle_graphs_pyg("./graph_objects/particle_graphs/.", ['fully_connected'], 100000)
 
-_construct_particle_graphs_pyg("./graph_objects/particle_graphs/.", ['fully_connected'], 100000, additional_edge_attrs='eec_with_charges')
+_construct_particle_graphs_pyg("./graph_objects/particle_graphs/.", ['fully_connected'], 150000, additional_edge_attrs='eec_with_charges')
