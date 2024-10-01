@@ -6,11 +6,48 @@ from sklearn import metrics
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch_geometric.nn import GCNConv, GATConv, global_mean_pool
+from torch_geometric.nn import GCNConv, GATConv, HypergraphConv, global_mean_pool
 from torch.utils.data import random_split
 from torch_geometric.loader import DataLoader
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+
+class HyperGraphNet(torch.nn.Module):
+    def __init__(self, in_channels, hidden_channels, out_channels):
+        super(HyperGraphNet, self).__init__()
+        # Hypergraph convolution layers with attention
+        self.conv1 = HypergraphConv(in_channels, hidden_channels, heads=4, concat=True, use_attention=True)
+        self.conv2 = HypergraphConv(hidden_channels * 4, hidden_channels, heads=4, concat=True, use_attention=True)
+
+        # MLP for classification
+        self.lin1 = nn.Linear(hidden_channels * 4, hidden_channels)
+        self.lin2 = nn.Linear(hidden_channels, out_channels)
+
+        # Dropout layer (by default, only active during training -- i.e. disabled with mode.eval() )
+        self.dropout = nn.Dropout(p=0.5)
+        
+    def forward(self, data):
+        x, hyperedge_index = data.x, data.hyperedge_index
+        
+        # First hypergraph convolution layer with attention
+        x = self.conv1(x, hyperedge_index)
+        x = F.relu(x)
+        x = self.dropout(x)
+        
+        # Second hypergraph convolution layer with attention
+        x = self.conv2(x, hyperedge_index)
+        x = F.relu(x)
+        x = self.dropout(x)
+        
+        # Global pooling to reduce each graph into a feature vector
+        x = global_mean_pool(x, data.batch)
+        
+        # Fully connected layers
+        x = F.relu(self.lin1(x))
+        x = self.dropout(x)
+        x = self.lin2(x)
+        
+        return F.softmax(x, dim=1)
 
 class GAT(torch.nn.Module):
     def __init__(self, n_input_features, hidden_dim, n_output_classes, dropout_rate=0.5):
@@ -31,7 +68,7 @@ class GAT(torch.nn.Module):
         x = self.conv1(x, edge_index)
         x = F.relu(x)
         x = self.dropout(x)
-    
+
         x = self.conv2(x, edge_index)
         x = F.relu(x)
         x = self.dropout(x)
