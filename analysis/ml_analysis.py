@@ -304,7 +304,7 @@ class MLAnalysis:
         plt.savefig("./metrics_plot/metrics_plot"+"_"+str(self.input_dim)+"_"+\
             str(self.hidden_dim)+"_"+str(self.model.__class__.__name__)+"_"+str(self.batch_size)+"_"+str(self.learning_rate)+".png")
 
-analysis = MLAnalysis(4, 4, 2, model="GAT", batch_size=256, learning_rate=0.0001, epochs=100)
+analysis = MLAnalysis(3, 4, 2, model="GAT", batch_size=1024, learning_rate=0.00025, epochs=100)
 
 analysis.load_data()
 
