@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import eec
 import fastjet
+from sklearn.preprocessing import OneHotEncoder
 
 def get_eec_ls_values(data, N = 2, bins = 50, axis_range = (1e-3, 1)):
     """
@@ -35,6 +36,14 @@ def get_eec_ls_values(data, N = 2, bins = 50, axis_range = (1e-3, 1)):
 
     return eec_ls
 
+# function to one hot encode the jet type and leave the rest of the features as is
+def OneHotEncodeType(x: np.ndarray):
+    enc = OneHotEncoder(categories=[[0, 1]])
+    type_encoded = enc.fit_transform(x[..., 0].reshape(-1, 1)).toarray()
+    other_features = x[..., 1:].reshape(-1, 3)
+    return np.concatenate((type_encoded, other_features), axis=-1).reshape(*x.shape[:-1], -1)
+
+
 def reclusterJets(jet, R=0.4, pt_cut=0):
     """
     Recluster the jets.
@@ -60,22 +69,29 @@ def reclusterJets(jet, R=0.4, pt_cut=0):
 
     return cs.constituents()[0], cs.inclusive_jets()
 
-def plot_jet_kinematics(inclusive_jet):
+def plot_jet_kinematics(inclusive_jet, input_type=''):
     pt_list = []
     y_list = []
     phi_list = []
     
     for jet in inclusive_jet:
-        # Extract E, px, py, pz
-        E = jet[0]
-        px = jet[1]
-        py = jet[2]
-        pz = jet[3]
-        
-        # Calculate pt, y, phi
-        pt = np.sqrt(px**2 + py**2)
-        y = 0.5 * np.log((E + pz) / (E - pz))
-        phi = np.arctan2(py, px)
+
+        if input_type=='hadronic':
+            pt = jet[0]
+            y = jet[1]
+            phi = jet[2]
+
+        else:
+            # Extract E, px, py, pz
+            E = jet[0]
+            px = jet[1]
+            py = jet[2]
+            pz = jet[3]
+            
+            # Calculate pt, y, phi
+            pt = np.sqrt(px**2 + py**2)
+            y = 0.5 * np.log((E + pz) / (E - pz))
+            phi = np.arctan2(py, px)
         
         # Append to lists
         pt_list.append(pt)
@@ -92,17 +108,17 @@ def plot_jet_kinematics(inclusive_jet):
     axs[0].set_title('pt vs y')
     
     # Plot y vs phi
-   axs[1].scatter(y_list, phi_list)
+    axs[1].scatter(y_list, phi_list)
     axs[1].set_xlabel('y')
     axs[1].set_ylabel('phi')
     axs[1].set_title('y vs phi')
-    
+
     # Plot pt vs phi
     axs[2].scatter(pt_list, phi_list)
     axs[2].set_xlabel('pt')
     axs[2].set_ylabel('phi')
     axs[2].set_title('pt vs phi')
-    
+
     # Save the plot
     plt.tight_layout()
     plt.savefig('kinematics_plot.png')
