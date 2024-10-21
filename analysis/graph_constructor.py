@@ -15,7 +15,7 @@ import fastjet
 import awkward as ak
 
 from import_dataset import import_CMS2011AJets_dataset
-from utils import get_eec_ls_values, plot_jet_kinematics, reclusterJets, OneHotEncodeType
+from utils import get_eec_ls_values, plot_jet_kinematics, reclusterJets, OneHotEncodeType, normalize_array
 
 from jetnet.datasets import JetNet
 from jetnet.datasets.normalisations import FeaturewiseLinear
@@ -25,7 +25,7 @@ def _construct_particle_graphs_pyg(
         graph_structures,
         N=500000,
         dataset='jetnet',
-        eec_prop=[[2, 3, 4], 50, (1e-3, 2)], # [N, bins, (R_Lmin, R_Lmax)]
+        eec_prop=[[2, 3, 4], 200, (1e-3, 2)], # [N, bins, (R_Lmin, R_Lmax)]
         additional_node_attrs=None,
         additional_edge_attrs=None, # None or eec_with_pids or eec_with_charges or eec_without_charges
         additional_graph_attrs=None,
@@ -188,13 +188,21 @@ def _construct_particle_graph_pyg(
     if additional_edge_attrs:
         # Calculate edge features
         edge_features = [[] for _ in range(len(additional_edge_attrs))]
+        
+        # Normalizing the eec values
+        edge_attrs = []
+
+        for i in range(len(additional_edge_attrs)):
+            edge_attrs.append(normalize_array(np.array(list(additional_edge_attrs[i].get_hist_errs(0, False)[0]))))
+
+        #  
         for i, j in zip(row, col):
             delta_y = x[i][1] - x[j][1]
             delta_phi_abs = abs(x[i][2] - x[j][2])
             delta_phi = delta_phi_abs if delta_phi_abs <= np.pi else 2 * np.pi - delta_phi_abs
             delta_R = np.sqrt(delta_y**2 + delta_phi**2)
             
-            # if delta_R > 0.7:
+            # if delta_R > 1.8:
             #     print(f"delta_R: {delta_R}, delta_y: {delta_y}, delta_phi: {delta_phi}")
 
             # Determine the bin for the edge value

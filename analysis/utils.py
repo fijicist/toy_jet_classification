@@ -43,6 +43,12 @@ def OneHotEncodeType(x: np.ndarray):
     other_features = x[..., 1:].reshape(-1, 3)
     return np.concatenate((type_encoded, other_features), axis=-1).reshape(*x.shape[:-1], -1)
 
+def normalize_array(arr):
+    mean = np.mean(arr)
+    std_dev = np.std(arr)
+    normalized_arr = (arr - mean) / std_dev
+    return normalized_arr
+
 
 def reclusterJets(jet, R=0.4, pt_cut=0):
     """
