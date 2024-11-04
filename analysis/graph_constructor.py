@@ -25,7 +25,8 @@ def _construct_particle_graphs_pyg(
         graph_structures,
         N=500000,
         dataset='jetnet',
-        eec_prop=[[2, 3, 4], 200, (1e-3, 2)], # [N, bins, (R_Lmin, R_Lmax)]
+        reclusterJets=False,
+        eec_prop=[[2], 500, (1e-3, 2)], # [N, bins, (R_Lmin, R_Lmax)]
         additional_node_attrs=None,
         additional_edge_attrs=None, # None or eec_with_pids or eec_with_charges or eec_without_charges
         additional_graph_attrs=None,
@@ -38,7 +39,7 @@ def _construct_particle_graphs_pyg(
             "num_particles": 30,  # we retain only the 30 highest pT particles for this demo
             "jet_features": ["type", "pt", "eta", "mass"],
             "particle_normalisation": FeaturewiseLinear(
-                normal=True, normalise_features=[True, True, True]
+                normal=True, normalise_features=[False, True, True]
             ),
             # pass our function as a transform to be applied to the jet features
             "jet_transform": OneHotEncodeType,
@@ -60,49 +61,55 @@ def _construct_particle_graphs_pyg(
         # Load dataset
         X, y = energyflow.qg_jets.load(N, pad=False)
         # energyflow.utils.remap_pids(X)
-
-        # Reclustering the jets using fastjet to check the clustering
-        print(f'  Reclustering jets using fastjet...')
         
-        inclusive_jets = [[0, 0, 0, 0] for _ in range(len(X))]
-
-        for i in range(len(X)):
-            X[i] = energyflow.p4s_from_ptyphipids(X[i])
-            X[i] = X[i].astype(np.float64)
+        if reclusterJets:
         
-            # Input to fastjet as an awkward array
-            particleAwk = ak.zip({"px": X[i][:, 1], "py": X[i][:, 2], "pz": X[i][:, 3], "E": X[i][:, 0]})
-        
-            # Reclustering the jets
-            reclustered_jets, inclusive_jet = reclusterJets(particleAwk, R=0.4, pt_cut=0)
-        
-            # For jet kinematics plot
-            inclusive_jets[i][1] = ak.to_numpy(ak.unzip(inclusive_jet))[0]
-            inclusive_jets[i][2] = ak.to_numpy(ak.unzip(inclusive_jet))[1]
-            inclusive_jets[i][3] = ak.to_numpy(ak.unzip(inclusive_jet))[2]
-            inclusive_jets[i][0] = ak.to_numpy(ak.unzip(inclusive_jet))[3]
-
-            # For particle graphs 
-            X[i][:, 1] = ak.to_numpy(ak.unzip(reclustered_jets))[0]
-            X[i][:, 2] = ak.to_numpy(ak.unzip(reclustered_jets))[1]
-            X[i][:, 3] = ak.to_numpy(ak.unzip(reclustered_jets))[2]
-            X[i][:, 0] = ak.to_numpy(ak.unzip(reclustered_jets))[3]
-        
-            X[i] = energyflow.ptyphims_from_p4s(X[i])
+            # Reclustering the jets using fastjet to check the clustering
+            print(f'  Reclustering jets using fastjet...')
             
-            # deleting the mass column from the jets
-            X[i] = np.delete(X[i], 3, 1)
+            inclusive_jets = [[0, 0, 0, 0] for _ in range(len(X))]
 
-        plot_jet_kinematics(inclusive_jets)
-        
-        print("  Reclustering done.")
+            for i in range(len(X)):
+                X[i] = energyflow.p4s_from_ptyphipids(X[i])
+                X[i] = X[i].astype(np.float64)
+            
+                # Input to fastjet as an awkward array
+                particleAwk = ak.zip({"px": X[i][:, 1], "py": X[i][:, 2], "pz": X[i][:, 3], "E": X[i][:, 0]})
+            
+                # Reclustering the jets
+                reclustered_jets, inclusive_jet = reclusterJets(particleAwk, R=0.4, pt_cut=0)
+            
+                # For jet kinematics plot
+                inclusive_jets[i][1] = ak.to_numpy(ak.unzip(inclusive_jet))[0]
+                inclusive_jets[i][2] = ak.to_numpy(ak.unzip(inclusive_jet))[1]
+                inclusive_jets[i][3] = ak.to_numpy(ak.unzip(inclusive_jet))[2]
+                inclusive_jets[i][0] = ak.to_numpy(ak.unzip(inclusive_jet))[3]
+
+                # For particle graphs 
+                X[i][:, 1] = ak.to_numpy(ak.unzip(reclustered_jets))[0]
+                X[i][:, 2] = ak.to_numpy(ak.unzip(reclustered_jets))[1]
+                X[i][:, 3] = ak.to_numpy(ak.unzip(reclustered_jets))[2]
+                X[i][:, 0] = ak.to_numpy(ak.unzip(reclustered_jets))[3]
+            
+                X[i] = energyflow.ptyphims_from_p4s(X[i])
+                
+                # deleting the mass column from the jets
+                X[i] = np.delete(X[i], 3, 1)
+
+            plot_jet_kinematics(inclusive_jets)
+            
+            print("  Reclustering done.")
 
         # Preprocess by centering jets and normalizing pts
         for x in tqdm.tqdm(X, desc='  Preprocessing jets', total=len(X)):
             mask = x[:,0] > 0
             yphi_avg = np.average(x[mask,1:3], weights=x[mask,0], axis=0)
             x[mask,1:3] -= yphi_avg
-            x[mask,0] /= x[:,0].sum()
+
+            # normalizing pt
+            x[mask,0] = np.log(x[mask,0])
+            x[mask,0] = (x[mask,0] - x[mask,0].mean()) / x[mask,0].std()
+
 
     if dataset == 'jetnet':
         print(f'Constructing PyG particle graphs from JetNet dataset...')
@@ -111,7 +118,25 @@ def _construct_particle_graphs_pyg(
         X, y = JetNet(**data_args_jetnet)[:]
         X = X.numpy()
         y = y.numpy()[:, 0].astype(int)
-        plot_jet_kinematics(X, input_type='hadronic')
+
+        # Reshaping and filtering out zero-padded rows
+        result = []
+        
+        for i in range(X.shape[0]):
+            # Filter out zero-padded rows
+            non_zero_particles = X[i][~np.all(X[i] == 0, axis=1)]
+            result.append(non_zero_particles)
+
+        X = result
+
+        # # Preprocess by centering jets and normalizing pts
+        # for x in tqdm.tqdm(X, desc='  Preprocessing jets', total=len(X)):
+        #
+        #     # normalizing pt
+        #     x[:, 0] = np.log(x[: ,0])
+        #     x[:,0] = (x[:,0] - x[:,0].mean()) / x[:,0].std()
+
+        # plot_jet_kinematics(X, input_type='hadronic')
 
     # Calculate EnergyEnergyCorrelation (EEC) features
     if additional_edge_attrs == 'eec_with_charges':
@@ -125,6 +150,15 @@ def _construct_particle_graphs_pyg(
         additional_edge_attrs = []
         for i in range(len(eec_prop[0])):
             additional_edge_attrs.append(get_eec_ls_values(X, N=eec_prop[0][i], bins=eec_prop[1], axis_range=eec_prop[2]))
+
+
+    # Preprocess jets by normalizing pt
+    for x in tqdm.tqdm(X, desc='  Preprocessing jets', total=len(X)):
+
+        # normalizing pt
+        x[:, 0] = np.log(x[: ,0])
+        x[:,0] = (x[:,0] - x[:,0].mean()) / x[:,0].std()
+
 
     # Create output directory if it doesn't exist
     if not os.path.exists(output_dir):
@@ -170,6 +204,8 @@ def _construct_particle_graph_pyg(
     x = x[~np.all(x == 0, axis=1)]
     node_features = torch.tensor(x, dtype=torch.float)
 
+    print(node_features)
+
     # Edge connectivity -- fully connected
     adj_matrix = np.ones((x.shape[0], x.shape[0])) - np.identity((x.shape[0]))
     row, col = np.where(adj_matrix)
@@ -195,7 +231,6 @@ def _construct_particle_graph_pyg(
         for i in range(len(additional_edge_attrs)):
             edge_attrs.append(normalize_array(np.array(list(additional_edge_attrs[i].get_hist_errs(0, False)[0]))))
 
-        #  
         for i, j in zip(row, col):
             delta_y = x[i][1] - x[j][1]
             delta_phi_abs = abs(x[i][2] - x[j][2])
@@ -213,11 +248,13 @@ def _construct_particle_graph_pyg(
 
             # Get the histogram value for the bin
             for i in range(len(additional_edge_attrs)):
-                edge_features[i].append(additional_edge_attrs[i].get_hist_errs(0, False)[0][bin_index])
+                edge_features[i].append(edge_attrs[i][bin_index])
 
 
         edge_features_tensor = torch.tensor(edge_features, dtype=torch.float)
         edge_features_tensor = edge_features_tensor.t() # Transpose to dim (n_edges, n_features)
+        print(edge_features_tensor)
+        exit()
 
         # # Zero pad edge_features_tensor to match the dimension of edge_indices_long
         # if edge_features_tensor.size(0) < edge_indices_long.size(1):

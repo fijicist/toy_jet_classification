@@ -83,9 +83,15 @@ def plot_jet_kinematics(inclusive_jet, input_type=''):
     for jet in inclusive_jet:
 
         if input_type=='hadronic':
-            pt = jet[0]
-            y = jet[1]
-            phi = jet[2]
+
+            pt = jet[:, 0]
+            y = jet[:, 1]
+            phi = jet[:, 2]
+
+            print(pt)
+            # pt = jet[0]
+            # y = jet[1]
+            # phi = jet[2]
 
         else:
             # Extract E, px, py, pz
@@ -107,23 +113,42 @@ def plot_jet_kinematics(inclusive_jet, input_type=''):
     # Create subplots
     fig, axs = plt.subplots(1, 3, figsize=(15, 5))
     
-    # Plot pt vs y
-    axs[0].scatter(pt_list, y_list)
+    # Plot pt 
+    axs[0].hist(pt_list, bins=50)
     axs[0].set_xlabel('pt')
-    axs[0].set_ylabel('y')
-    axs[0].set_title('pt vs y')
-    
-    # Plot y vs phi
-    axs[1].scatter(y_list, phi_list)
-    axs[1].set_xlabel('y')
-    axs[1].set_ylabel('phi')
-    axs[1].set_title('y vs phi')
+    axs[0].set_ylabel('Frequency')
+    axs[0].set_title('pt')
 
-    # Plot pt vs phi
-    axs[2].scatter(pt_list, phi_list)
-    axs[2].set_xlabel('pt')
-    axs[2].set_ylabel('phi')
-    axs[2].set_title('pt vs phi')
+    # Plot y
+    axs[1].hist(y_list, bins=50)
+    axs[1].set_xlabel('y')
+    axs[1].set_ylabel('Frequency')
+    axs[1].set_title('y')
+    
+    # Plot phi
+    axs[2].hist(phi_list, bins=50)
+    axs[2].set_xlabel('phi')
+    axs[2].set_ylabel('Frequency')
+    axs[2].set_title('phi')
+
+
+    # # Plot pt vs y
+    # axs[0].scatter(pt_list, y_list)
+    # axs[0].set_xlabel('pt')
+    # axs[0].set_ylabel('y')
+    # axs[0].set_title('pt vs y')
+    # 
+    # # Plot y vs phi
+    # axs[1].scatter(y_list, phi_list)
+    # axs[1].set_xlabel('y')
+    # axs[1].set_ylabel('phi')
+    # axs[1].set_title('y vs phi')
+    #
+    # # Plot pt vs phi
+    # axs[2].scatter(pt_list, phi_list)
+    # axs[2].set_xlabel('pt')
+    # axs[2].set_ylabel('phi')
+    # axs[2].set_title('pt vs phi')
 
     # Save the plot
     plt.tight_layout()

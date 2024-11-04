@@ -5,12 +5,15 @@ import numpy as np
 from sklearn import metrics
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.modules import loss
 import torch.optim as optim
 from torch_geometric.nn import GCNConv, GATConv, HypergraphConv, global_mean_pool
 from torch.utils.data import random_split
 from torch_geometric.loader import DataLoader
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+
+from jetnet.losses import EMDLoss
 
 class HyperGraphNet(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels):
@@ -69,6 +72,11 @@ class GAT(torch.nn.Module):
         x = F.relu(x)
         x = self.dropout(x)
 
+        x = self.conv2(x, edge_index)
+        x = F.relu(x)
+        x = self.dropout(x)
+
+        # testing another hidden layer 
         x = self.conv2(x, edge_index)
         x = F.relu(x)
         x = self.dropout(x)
@@ -304,7 +312,7 @@ class MLAnalysis:
         plt.savefig("./metrics_plot/metrics_plot"+"_"+str(self.input_dim)+"_"+\
             str(self.hidden_dim)+"_"+str(self.model.__class__.__name__)+"_"+str(self.batch_size)+"_"+str(self.learning_rate)+".png")
 
-analysis = MLAnalysis(3, 6, 2, model="GAT", batch_size=1024, learning_rate=0.0001, epochs=200)
+analysis = MLAnalysis(3, 6, 2, model="GAT", batch_size=1024, learning_rate=0.0005, epochs=100)
 
 analysis.load_data()
 
