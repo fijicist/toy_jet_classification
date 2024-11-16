@@ -53,7 +53,7 @@ class HyperGraphNet(torch.nn.Module):
         return F.softmax(x, dim=1)
 
 class GAT(torch.nn.Module):
-    def __init__(self, n_input_features, hidden_dim, n_output_classes, dropout_rate=0.5):
+    def __init__(self, n_input_features, hidden_dim, n_output_classes, dropout_rate=0.25):
         super(GAT, self).__init__()
         self.head = 8
 
@@ -65,10 +65,35 @@ class GAT(torch.nn.Module):
 
         self.lin = nn.Linear(hidden_dim * self.head, n_output_classes)
 
+        # testing a linear layer before gatconv layer
+        self.lin1 = nn.Linear(n_input_features, 128)
+        self.bn1 = nn.BatchNorm1d(128)
+        self.lin2 = nn.Linear(128, 512)
+        self.bn2 = nn.BatchNorm1d(512)
+        self.lin3 = nn.Linear(512, 128)
+        self.bn3 = nn.BatchNorm1d(128)
+        self.conv3 = GATConv(128, hidden_dim, heads=self.head, dropout=dropout_rate)
+
     def forward(self, x, edge_index, batch):
         
+        # testing a linear layer before gatconv layer
+        x = self.lin1(x)
+        x = self.bn1(x)
+        x = F.relu(x)
+        x = self.dropout(x)
+
+        x = self.lin2(x)
+        x = self.bn2(x)
+        x = F.relu(x)
+        x = self.dropout(x)
+
+        x = self.lin3(x)
+        x = self.bn3(x)
+        x = F.relu(x)
+        x = self.dropout(x)
+
         # GNN layers
-        x = self.conv1(x, edge_index)
+        x = self.conv3(x, edge_index)
         x = F.relu(x)
         x = self.dropout(x)
 
@@ -81,11 +106,116 @@ class GAT(torch.nn.Module):
         x = F.relu(x)
         x = self.dropout(x)
 
+        # testing another hidden layer 
+        x = self.conv2(x, edge_index)
+        x = F.relu(x)
+        x = self.dropout(x)
+
+        # # testing another hidden layer
+        # x = self.conv2(x, edge_index)
+        # x = F.relu(x)
+        # x = self.dropout(x)
+        #
+        # # testing another hidden layer
+        # x = self.conv2(x, edge_index)
+        # x = F.relu(x)
+        # x = self.dropout(x)
+        #
+        # # testing another hidden layer 
+        # x = self.conv2(x, edge_index)
+        # x = F.relu(x)
+        # x = self.dropout(x)
+        #
+        # # testing another hidden layer 
+        # x = self.conv2(x, edge_index)
+        # x = F.relu(x)
+        # x = self.dropout(x)
+
         x = global_mean_pool(x, batch)
 
         x = self.lin(x)
 
         return F.softmax(x, dim=1)
+
+# class GAT(torch.nn.Module):
+#     def __init__(self, n_input_features, hidden_dim, n_output_classes, dropout_rate=0.25):
+#         super(GAT, self).__init__()
+#         self.head = 8
+#
+#         self.conv1 = GATConv(n_input_features, hidden_dim, heads=self.head, dropout=dropout_rate)
+#         self.conv2 = GATConv(hidden_dim * self.head, hidden_dim, heads=self.head, dropout=dropout_rate)
+#
+#         # Dropout layer (by default, only active during training -- i.e. disabled with mode.eval() )
+#         self.dropout = nn.Dropout(p=dropout_rate)
+#
+#         self.lin = nn.Linear(hidden_dim * self.head, n_output_classes)
+#
+#         # testing a linear layer before gatconv layer
+#         self.lin1 = nn.Linear(n_input_features, 128)
+#         self.lin2 = nn.Linear(128, 512)
+#         self.lin3 = nn.Linear(512, 128)
+#         self.conv3 = GATConv(128, hidden_dim, heads=self.head, dropout=dropout_rate)
+#
+#     def forward(self, x, edge_index, batch):
+#         
+#         # testing a linear layer before gatconv layer
+#         x = self.lin1(x)
+#         x = F.relu(x)
+#         x = self.dropout(x)
+#
+#         x = self.lin2(x)
+#         x = F.relu(x)
+#         x = self.dropout(x)
+#
+#         x = self.lin3(x)
+#         x = F.relu(x)
+#         x = self.dropout(x)
+#
+#         # GNN layers
+#         # x = self.conv1(x, edge_index)
+#         x = self.conv3(x, edge_index)
+#         x = F.relu(x)
+#         x = self.dropout(x)
+#
+#         x = self.conv2(x, edge_index)
+#         x = F.relu(x)
+#         x = self.dropout(x)
+#
+#         # testing another hidden layer 
+#         x = self.conv2(x, edge_index)
+#         x = F.relu(x)
+#         x = self.dropout(x)
+#
+#         # testing another hidden layer 
+#         x = self.conv2(x, edge_index)
+#         x = F.relu(x)
+#         x = self.dropout(x)
+#
+#         # testing another hidden layer
+#         x = self.conv2(x, edge_index)
+#         x = F.relu(x)
+#         x = self.dropout(x)
+#
+#         # testing another hidden layer
+#         x = self.conv2(x, edge_index)
+#         x = F.relu(x)
+#         x = self.dropout(x)
+#
+#         # testing another hidden layer 
+#         x = self.conv2(x, edge_index)
+#         x = F.relu(x)
+#         x = self.dropout(x)
+#
+#         # testing another hidden layer 
+#         x = self.conv2(x, edge_index)
+#         x = F.relu(x)
+#         x = self.dropout(x)
+#
+#         x = global_mean_pool(x, batch)
+#
+#         x = self.lin(x)
+#
+#         return F.softmax(x, dim=1)
 
 class GCNModel(nn.Module):
     def __init__(self, n_input_features, hidden_dim, n_output_classes, dropout_rate=0.5):
@@ -312,7 +442,7 @@ class MLAnalysis:
         plt.savefig("./metrics_plot/metrics_plot"+"_"+str(self.input_dim)+"_"+\
             str(self.hidden_dim)+"_"+str(self.model.__class__.__name__)+"_"+str(self.batch_size)+"_"+str(self.learning_rate)+".png")
 
-analysis = MLAnalysis(3, 6, 2, model="GAT", batch_size=1024, learning_rate=0.0005, epochs=100)
+analysis = MLAnalysis(7, 4, 2, model="GAT", batch_size=512, learning_rate=0.0005, epochs=100)
 
 analysis.load_data()
 
