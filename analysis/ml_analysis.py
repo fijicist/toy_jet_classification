@@ -28,7 +28,7 @@ class HyperGraphNet(torch.nn.Module):
 
         # Dropout layer (by default, only active during training -- i.e. disabled with mode.eval() )
         self.dropout = nn.Dropout(p=0.5)
-        
+                
     def forward(self, data):
         x, hyperedge_index = data.x, data.hyperedge_index
         
@@ -53,7 +53,7 @@ class HyperGraphNet(torch.nn.Module):
         return F.softmax(x, dim=1)
 
 class GAT(torch.nn.Module):
-    def __init__(self, n_input_features, hidden_dim, n_output_classes, dropout_rate=0.25):
+    def __init__(self, n_input_features, hidden_dim, n_output_classes, dropout_rate=0.1):
         super(GAT, self).__init__()
         self.head = 8
 
@@ -442,7 +442,7 @@ class MLAnalysis:
         plt.savefig("./metrics_plot/metrics_plot"+"_"+str(self.input_dim)+"_"+\
             str(self.hidden_dim)+"_"+str(self.model.__class__.__name__)+"_"+str(self.batch_size)+"_"+str(self.learning_rate)+".png")
 
-analysis = MLAnalysis(7, 4, 2, model="GAT", batch_size=512, learning_rate=0.0005, epochs=100)
+analysis = MLAnalysis(7, 4, 2, model="GAT", batch_size=512, learning_rate=0.0001, epochs=30)
 
 analysis.load_data()
 

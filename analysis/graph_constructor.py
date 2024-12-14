@@ -13,6 +13,7 @@ import torch_geometric
 
 import fastjet
 import awkward as ak
+import matplotlib.pyplot as plt
 
 from import_dataset import import_CMS2011AJets_dataset
 from utils import get_eec_ls_values, plot_jet_kinematics, reclusterJets, OneHotEncodeType, normalize_array
@@ -240,10 +241,28 @@ def _construct_particle_graphs_pyg(
             # normalizing new features
             X[i] = (X[i] - np.average(X[i], axis=0)) / np.std(X[i], axis=0)
 
+        
+
         # One-hot encode the labels
         y = OneHotEncodeType(y)[:, :1]
 
         # plot_jet_kinematics(X, input_type='hadronic')
+        
+        # plotting
+        fig, axs = plt.subplots(1, 7, figsize=(20, 5))
+        
+        jet_list = [np.array([]) for _ in range(7)]
+        for i in range(7):
+            for j in range(len(X)):
+                jet_list[i] = np.append(jet_list[i], X[j][:, i])
+
+        for i in range(7):
+            axs[i].hist(jet_list[i], bins=100)
+            axs[i].set_title(f'Histogram of X[:, :, {i}]')
+
+        plt.tight_layout()
+        plt.savefig('scatter_plot.png')
+        exit()
 
     # Calculate EnergyEnergyCorrelation (EEC) features
     if additional_edge_attrs == 'eec_with_charges':
