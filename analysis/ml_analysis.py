@@ -79,56 +79,56 @@ class GAT(torch.nn.Module):
         # testing a linear layer before gatconv layer
         x = self.lin1(x)
         x = self.bn1(x)
-        x = F.relu(x)
+        x = F.gelu(x)
         x = self.dropout(x)
 
         x = self.lin2(x)
         x = self.bn2(x)
-        x = F.relu(x)
+        x = F.gelu(x)
         x = self.dropout(x)
 
         x = self.lin3(x)
         x = self.bn3(x)
-        x = F.relu(x)
+        x = F.gelu(x)
         x = self.dropout(x)
 
         # GNN layers
         x = self.conv3(x, edge_index)
-        x = F.relu(x)
+        x = F.gelu(x)
         x = self.dropout(x)
 
         x = self.conv2(x, edge_index)
-        x = F.relu(x)
+        x = F.gelu(x)
         x = self.dropout(x)
 
-        # testing another hidden layer 
+        # testing another hidden layer
         x = self.conv2(x, edge_index)
-        x = F.relu(x)
+        x = F.gelu(x)
         x = self.dropout(x)
 
-        # testing another hidden layer 
+        # testing another hidden layer
         x = self.conv2(x, edge_index)
-        x = F.relu(x)
+        x = F.gelu(x)
         x = self.dropout(x)
 
         # # testing another hidden layer
         # x = self.conv2(x, edge_index)
-        # x = F.relu(x)
+        # x = F.gelu(x)
         # x = self.dropout(x)
         #
         # # testing another hidden layer
         # x = self.conv2(x, edge_index)
-        # x = F.relu(x)
+        # x = F.gelu(x)
         # x = self.dropout(x)
         #
         # # testing another hidden layer 
         # x = self.conv2(x, edge_index)
-        # x = F.relu(x)
+        # x = F.gelu(x)
         # x = self.dropout(x)
         #
         # # testing another hidden layer 
         # x = self.conv2(x, edge_index)
-        # x = F.relu(x)
+        # x = F.gelu(x)
         # x = self.dropout(x)
 
         x = global_mean_pool(x, batch)
@@ -442,7 +442,7 @@ class MLAnalysis:
         plt.savefig("./metrics_plot/metrics_plot"+"_"+str(self.input_dim)+"_"+\
             str(self.hidden_dim)+"_"+str(self.model.__class__.__name__)+"_"+str(self.batch_size)+"_"+str(self.learning_rate)+".png")
 
-analysis = MLAnalysis(7, 4, 2, model="GAT", batch_size=512, learning_rate=0.0001, epochs=30)
+analysis = MLAnalysis(7, 4, 2, model="GAT", batch_size=1024, learning_rate=0.0001, epochs=100)
 
 analysis.load_data()
 
