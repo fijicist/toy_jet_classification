@@ -15,42 +15,62 @@ from tqdm import tqdm
 
 from jetnet.losses import EMDLoss
 
-class HyperGraphNet(torch.nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_channels):
-        super(HyperGraphNet, self).__init__()
-        # Hypergraph convolution layers with attention
-        self.conv1 = HypergraphConv(in_channels, hidden_channels, heads=4, concat=True, use_attention=True)
-        self.conv2 = HypergraphConv(hidden_channels * 4, hidden_channels, heads=4, concat=True, use_attention=True)
+class GATHypergraphNet(torch.nn.Module):
+    """
+    A model that processes edge features using GATConv layers and hypergraph features
+    using HypergraphConv layers, then combines the results for jet classification.
+    """
+    def __init__(self, in_channels, hidden_channels, out_channels, dropout_rate=0.5):
+        super(GATHypergraphNet, self).__init__()
 
-        # MLP for classification
-        self.lin1 = nn.Linear(hidden_channels * 4, hidden_channels)
+        # GATConv layers for edge features
+        self.gat_conv1 = GATConv(in_channels, hidden_channels, heads=4, concat=True, dropout=dropout_rate)
+        self.gat_conv2 = GATConv(hidden_channels * 4, hidden_channels, heads=4, concat=True, dropout=dropout_rate)
+
+        # HypergraphConv layers for hyperedge features
+        self.hyper_conv1 = HypergraphConv(in_channels, hidden_channels, use_attention=True, attention_mode='edge', heads=4)
+        self.hyper_conv2 = HypergraphConv(hidden_channels, hidden_channels, use_attention=True, attention_mode='edge', heads=4)
+
+        # Fully connected layers for classification
+        self.lin1 = nn.Linear(hidden_channels * 8, hidden_channels)  # Combine GAT and Hypergraph outputs
         self.lin2 = nn.Linear(hidden_channels, out_channels)
 
-        # Dropout layer (by default, only active during training -- i.e. disabled with mode.eval() )
-        self.dropout = nn.Dropout(p=0.5)
-                
+        # Dropout layer
+        self.dropout = nn.Dropout(p=dropout_rate)
+
     def forward(self, data):
-        x, hyperedge_index = data.x, data.hyperedge_index
-        
-        # First hypergraph convolution layer with attention
-        x = self.conv1(x, hyperedge_index)
-        x = F.relu(x)
-        x = self.dropout(x)
-        
-        # Second hypergraph convolution layer with attention
-        x = self.conv2(x, hyperedge_index)
-        x = F.relu(x)
-        x = self.dropout(x)
-        
+        # Extract node features (x), edge index (edge_index), and hyperedge index (hyperedge_index)
+        x, edge_index, edge_features, hyperedge_index, hyperedge_features = data.x, data.edge_index, data.edge_attr, data.hyperedge_index, data.hyperedge_attr
+
+        # Process edge features with GATConv layers
+        x_gat = self.gat_conv1(x, edge_index=edge_index, edge_attr=edge_features)
+        x_gat = F.relu(x_gat)
+        x_gat = self.dropout(x_gat)
+        x_gat = self.gat_conv2(x_gat, edge_index=edge_index, edge_attr=edge_features)
+        x_gat = F.relu(x_gat)
+        x_gat = self.dropout(x_gat)
+
+        # Process hyperedge features with HypergraphConv layers
+        x_hyper = self.hyper_conv1(x, hyperedge_index=hyperedge_index, hyperedge_attr=hyperedge_features)
+        x_hyper = F.relu(x_hyper)
+        x_hyper = self.dropout(x_hyper)
+        x_hyper = self.hyper_conv2(x_hyper, hyperedge_index=hyperedge_index, hyperedge_attr=hyperedge_features)
+        x_hyper = F.relu(x_hyper)
+        x_hyper = self.dropout(x_hyper)
+
+        # Combine GAT and Hypergraph outputs
+        x_combined = torch.cat([x_gat, x_hyper], dim=1)
+
         # Global pooling to reduce each graph into a feature vector
-        x = global_mean_pool(x, data.batch)
-        
-        # Fully connected layers
-        x = F.relu(self.lin1(x))
-        x = self.dropout(x)
-        x = self.lin2(x)
-        
-        return F.softmax(x, dim=1)
+        x_pooled = global_mean_pool(x_combined, data.batch)
+
+        # Fully connected layers for classification
+        x_out = F.relu(self.lin1(x_pooled))
+        x_out = self.dropout(x_out)
+        x_out = self.lin2(x_out)
+
+        return F.softmax(x_out, dim=1)
+
 
 class GAT(torch.nn.Module):
     def __init__(self, n_input_features, hidden_dim, n_output_classes, dropout_rate=0.1):
@@ -277,6 +297,8 @@ class MLAnalysis:
             self.model = GCNModel(input_dim, hidden_dim, output_dim).to(self.device)
         elif model == "GAT":
             self.model = GAT(input_dim, hidden_dim, output_dim).to(self.device)
+        elif model == "GATHyper":
+            self.model = GATHypergraphNet(input_dim, hidden_dim, output_dim).to(self.device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate, weight_decay=1e-5, amsgrad=True)
         self.criterion = nn.CrossEntropyLoss()
         self.train_losses = np.zeros(epochs)
@@ -312,7 +334,6 @@ class MLAnalysis:
         del test_dataset
         gc.collect()
 
-        print(self.test_loader, self.train_loader)
         for step, data in enumerate(self.train_loader):
             print(f'Step {step + 1}:')
             print('=======')
@@ -336,7 +357,10 @@ class MLAnalysis:
         for epoch in tqdm(range(self.epochs), desc="Training epochs"):
             for data in self.train_loader:
                 data = data.to(self.device)
-                out = self.model.forward(data.x, data.edge_index, data.batch)
+                if self.model.__class__.__name__ == "GATHypergraphNet":
+                    out = self.model.forward(data)
+                else:
+                    out = self.model.forward(data.x, data.edge_index, data.batch)
                 loss = self.criterion(out, data.y.long())
                 self.train_losses[epoch] += loss.item()
                 self.train_losses[epoch] /= len(self.train_loader)
@@ -442,7 +466,7 @@ class MLAnalysis:
         plt.savefig("./metrics_plot/metrics_plot"+"_"+str(self.input_dim)+"_"+\
             str(self.hidden_dim)+"_"+str(self.model.__class__.__name__)+"_"+str(self.batch_size)+"_"+str(self.learning_rate)+".png")
 
-analysis = MLAnalysis(7, 4, 2, model="GAT", batch_size=1024, learning_rate=0.0001, epochs=100)
+analysis = MLAnalysis(7, 32, 2, model="GATHyper", batch_size=256, learning_rate=0.0001, epochs=100)
 
 analysis.load_data()
 

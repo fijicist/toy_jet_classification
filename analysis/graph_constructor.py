@@ -15,11 +15,12 @@ import fastjet
 import awkward as ak
 import matplotlib.pyplot as plt
 
-from import_dataset import import_CMS2011AJets_dataset
-from utils import get_eec_ls_values, plot_jet_kinematics, reclusterJets, OneHotEncodeType, normalize_array
+from utils import get_eec_ls_values, plot_jet_kinematics, reclusterJets, OneHotEncodeType, normalize_array, construct_n_point_hyperedges
 
 from jetnet.datasets import JetNet
 from jetnet.datasets.normalisations import FeaturewiseLinear
+
+import time 
 
 def _construct_particle_graphs_pyg(
         output_dir,
@@ -27,13 +28,13 @@ def _construct_particle_graphs_pyg(
         N=500000,
         dataset='jetnet',
         recluster_jets=False,
-        eec_prop=[[2], 500, (1e-3, 2)], # [N, bins, (R_Lmin, R_Lmax)]
+        eec_prop=[[2, 3, 4, 5, 6, 7, 8, 9], 500, (1e-3, 2)], # [N, bins, (R_Lmin, R_Lmax)]
         additional_node_attrs=None,
         additional_edge_attrs=None, # None or eec_with_pids or eec_with_charges or eec_without_charges
         additional_graph_attrs=None,
         additional_hypergraph_attrs=None,
         data_args_jetnet = {
-            "jet_type": ["q", "g"],  # gluon and top quark jets
+            "jet_type": ["q", "g"],  # gluon and light quark jets
             "data_dir": "datasets/jetnet",
             # these are the default particle features, written here to be explicit
             "particle_features": ["ptrel", "etarel", "phirel", "mask"],
@@ -174,7 +175,7 @@ def _construct_particle_graphs_pyg(
         print(f'Constructing PyG particle graphs from JetNet dataset...')
 
         # Load dataset
-        X, y = JetNet(**data_args_jetnet)[:]
+        X, y = JetNet(**data_args_jetnet)[:2]
         X = X.numpy()
         y = y.numpy()#[:, 0].astype(int)
 
@@ -249,33 +250,42 @@ def _construct_particle_graphs_pyg(
         # plot_jet_kinematics(X, input_type='hadronic')
         
         # plotting
-        fig, axs = plt.subplots(1, 7, figsize=(20, 5))
-        
-        jet_list = [np.array([]) for _ in range(7)]
-        for i in range(7):
-            for j in range(len(X)):
-                jet_list[i] = np.append(jet_list[i], X[j][:, i])
-
-        for i in range(7):
-            axs[i].hist(jet_list[i], bins=100)
-            axs[i].set_title(f'Histogram of X[:, :, {i}]')
-
-        plt.tight_layout()
-        plt.savefig('scatter_plot.png')
-        exit()
+        # fig, axs = plt.subplots(1, 7, figsize=(20, 5))
+        # 
+        # jet_list = [np.array([]) for _ in range(7)]
+        # for i in range(7):
+        #     for j in range(len(X)):
+        #         jet_list[i] = np.append(jet_list[i], X[j][:, i])
+        #
+        # for i in range(7):
+        #     axs[i].hist(jet_list[i], bins=100)
+        #     axs[i].set_title(f'Histogram of X[:, :, {i}]')
+        #
+        # plt.tight_layout()
+        # plt.savefig('scatter_plot.png')
+        # exit()
 
     # Calculate EnergyEnergyCorrelation (EEC) features
     if additional_edge_attrs == 'eec_with_charges':
         print(f'  Calculating EEC features with charges...')
         additional_edge_attrs = []
-        for i in range(len(eec_prop[0])):
-            additional_edge_attrs.append(get_eec_ls_values(old_X, N=eec_prop[0][i], bins=eec_prop[1], axis_range=eec_prop[2]))
+        if eec_prop[0][0] == 2:
+            additional_edge_attrs.append(get_eec_ls_values(old_X, N=eec_prop[0][0], bins=eec_prop[1], axis_range=eec_prop[2]))
 
     if additional_edge_attrs == 'eec_without_charges':
         print(f'  Calculating EEC features without charges...')
         additional_edge_attrs = []
-        for i in range(len(eec_prop[0])):
-            additional_edge_attrs.append(get_eec_ls_values(old_X, N=eec_prop[0][i], bins=eec_prop[1], axis_range=eec_prop[2]))
+        if eec_prop[0][0] == 2:
+            additional_edge_attrs.append(get_eec_ls_values(old_X, N=eec_prop[0][0], bins=eec_prop[1], axis_range=eec_prop[2]))
+
+    if additional_hypergraph_attrs == 'n_point_hyperedges':
+        print(f'  Calculating EEC features for hyperedges...')
+        additional_hypergraph_attrs = []
+        for i in eec_prop[0]:
+            if i == 2:
+                continue
+            else:
+                additional_hypergraph_attrs.append(get_eec_ls_values(old_X, N=i, bins=eec_prop[1], axis_range=eec_prop[2]))
 
 
     # Create output directory if it doesn't exist
@@ -294,8 +304,8 @@ def _construct_particle_graphs_pyg(
             graph_list.append(_construct_particle_graph_pyg(arg, additional_node_attrs, additional_edge_attrs, additional_graph_attrs, additional_hypergraph_attrs))
 
             # Save to file every 100,000 iterations
-            if (i + 1) % 100000 == 0:
-                partial_graph_filename = os.path.join(output_dir, f"graphs_pyg_{graph_key}_part_{i // 100000 + 1}.pt")
+            if (i + 1) % 85000 == 0:
+                partial_graph_filename = os.path.join(output_dir, f"graphs_pyg_{graph_key}_part_{i // 85000 + 1}.pt")
                 torch.save(graph_list, partial_graph_filename)
                 print(f'  Saved PyG graphs to {partial_graph_filename}.')
                 graph_list = []
@@ -421,27 +431,42 @@ def _construct_particle_graph_pyg(
         edge_features_tensor[:, 1:] = (edge_features_tensor[:, 1:] - means) / stds
 
 
-        # # Zero pad edge_features_tensor to match the dimension of edge_indices_long
-        # if edge_features_tensor.size(0) < edge_indices_long.size(1):
-        #     padding_size = edge_indices_long.size(1) - edge_features_tensor.size(0)
-        #     edge_features_tensor = torch.nn.functional.pad(edge_features_tensor, (0, 0, 0, padding_size))
-
-        # print(edge_features_tensor, edge_indices_long, edge_features_tensor.size(), edge_indices_long.size())
-        # exit()
-
         graph = torch_geometric.data.Data(x=node_features, edge_index=edge_indices_long, edge_attr=edge_features_tensor, y=graph_label)
 
     # if additional_graph_attrs:
     #     graph.graph_attrs = torch.tensor(additional_graph_attrs, dtype=torch.float)
 
-    # if additional_hypergraph_attrs:
-    #     graph.hypergraph_attrs = torch.tensor(additional_hypergraph_attrs, dtype=torch.float)
+    if additional_hypergraph_attrs:
+        # num_nodes is determined from the processed node features.
+        num_nodes = x.shape[0]
+
+        # Choose the desired order for the hyperedges (e.g., n=3 for 3-point, n=4 for 4-point, etc.)
+        n_point = [3, 4, 5, 6, 7, 8, 9]  # For HypergraphConv layer, has to be equal to no. of node features
+
+        # Construct the N-point hyperedges.
+        start_time = time.perf_counter()
+        hyperedge_index, hyperedge_attr = construct_n_point_hyperedges(num_nodes, old_x, additional_hypergraph_attrs, n=n_point, eec2=np.array(list(additional_edge_attrs[0].get_hist_errs(0, False)[0])))
+        end_time = time.perf_counter()
+        print(f"Time taken to construct hyperedges: {end_time - start_time:.2f} seconds.")
+        print(hyperedge_index, hyperedge_attr, hyperedge_index.shape, hyperedge_attr.shape)
+        exit()
+
+    # Construct graph as PyG data object
+    if additional_edge_attrs and additional_hypergraph_attrs:
+        graph = torch_geometric.data.Data(
+            x=node_features,          # Node features.
+            edge_index=edge_indices_long,    # Normal pairwise connectivity.
+            edge_attr=edge_features_tensor,  # Normal edge features.
+            hyperedge_index=hyperedge_index,   # Hypergraph incidence (for N-point hyperedges).
+            hyperedge_attr=hyperedge_attr,     # N-point EEC features for each hyperedge.
+            y=graph_label             # Graph label.
+        )
+
 
     else:
         graph = torch_geometric.data.Data(x=node_features, edge_index=edge_indices_long, edge_attr=None, y=graph_label)
 
     return graph
 
-#_construct_particle_graphs_pyg("./graph_objects/particle_graphs/.", ['fully_connected'], 100000)
 
-_construct_particle_graphs_pyg("./graph_objects/particle_graphs/.", ['fully_connected'], 200000, dataset='jetnet', recluster_jets=True, additional_edge_attrs='eec_without_charges')
+_construct_particle_graphs_pyg("./graph_objects/particle_graphs/.", ['fully_connected'], 2000, dataset='jetnet', recluster_jets=False, eec_prop=[[2, 3, 4, 5, 6, 7, 8, 9], 200, (1e-3, 1)], additional_edge_attrs='eec_without_charges', additional_hypergraph_attrs='n_point_hyperedges')
