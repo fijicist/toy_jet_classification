@@ -150,7 +150,7 @@ def construct_n_point_hyperedges(num_nodes, old_x, additional_hypergraph_attrs, 
             for batch in hyperedge_batches
         )
 
-        print(1)
+        print(f"Finished processing {n_val}-point hyperedges.")
 
         # Flatten results from parallel execution
         for batch_result in results:

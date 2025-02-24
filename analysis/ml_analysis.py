@@ -5,7 +5,6 @@ import numpy as np
 from sklearn import metrics
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.modules import loss
 import torch.optim as optim
 from torch_geometric.nn import GCNConv, GATConv, HypergraphConv, global_mean_pool
 from torch.utils.data import random_split
@@ -13,7 +12,6 @@ from torch_geometric.loader import DataLoader
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-from jetnet.losses import EMDLoss
 
 class GATHypergraphNet(torch.nn.Module):
     """
@@ -466,7 +464,7 @@ class MLAnalysis:
         plt.savefig("./metrics_plot/metrics_plot"+"_"+str(self.input_dim)+"_"+\
             str(self.hidden_dim)+"_"+str(self.model.__class__.__name__)+"_"+str(self.batch_size)+"_"+str(self.learning_rate)+".png")
 
-analysis = MLAnalysis(7, 32, 2, model="GATHyper", batch_size=256, learning_rate=0.0001, epochs=100)
+analysis = MLAnalysis(4, 32, 2, model="GATHyper", batch_size=32, learning_rate=0.0001, epochs=100)
 
 analysis.load_data()
 

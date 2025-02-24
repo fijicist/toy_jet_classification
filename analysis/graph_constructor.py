@@ -175,7 +175,7 @@ def _construct_particle_graphs_pyg(
         print(f'Constructing PyG particle graphs from JetNet dataset...')
 
         # Load dataset
-        X, y = JetNet(**data_args_jetnet)[:2]
+        X, y = JetNet(**data_args_jetnet)[:100]
         X = X.numpy()
         y = y.numpy()#[:, 0].astype(int)
 
@@ -205,16 +205,17 @@ def _construct_particle_graphs_pyg(
             # in the form of particle pt, rel_y, rel_phi
             old_X[i][:, 0] = old_X[i][:, 0] * y[i][1] # pt
 
-            X[i] = np.zeros((len(X[i][mask]), 7)) # Making a new array to store the new features
+            # X[i] = np.zeros((len(X[i][mask]), 7)) # Making a new array to store the new features
+            X[i] = np.zeros((len(X[i][mask]), 4)) # Making a new array to store the new features
 
             # Storing the old features in the new array
             X[i][:, 0] = old_X[i][:, 1] # delta_y
             X[i][:, 1] = old_X[i][:, 2] # delta_phi
             X[i][:, 2] = np.log(old_X[i][:, 0]) # log(pt)
             X[i][:, 3] = np.log(old_X[i][:, 0] * np.cosh(old_X[i][:, 1] + y[i][2])) # log(particle E)
-            X[i][:, 4] = np.log(old_X[i][:, 0] / y[i][1]) # log(pt / jet pt)
-            X[i][:, 5] = X[i][:, 3] - np.log(np.sqrt(y[i][1]**2 + y[i][3]**2)) # log(E / jet E)
-            X[i][:, 6] = np.sqrt(X[i][:, 0]**2 + X[i][:, 1]**2) # delta_R
+            # X[i][:, 4] = np.log(old_X[i][:, 0] / y[i][1]) # log(pt / jet pt)
+            # X[i][:, 5] = X[i][:, 3] - np.log(np.sqrt(y[i][1]**2 + y[i][3]**2)) # log(E / jet E)
+            # X[i][:, 6] = np.sqrt(X[i][:, 0]**2 + X[i][:, 1]**2) # delta_R
 
             X[i] = np.array(X[i])
             old_X[i] = np.array(old_X[i])
@@ -441,15 +442,16 @@ def _construct_particle_graph_pyg(
         num_nodes = x.shape[0]
 
         # Choose the desired order for the hyperedges (e.g., n=3 for 3-point, n=4 for 4-point, etc.)
-        n_point = [3, 4, 5, 6, 7, 8, 9]  # For HypergraphConv layer, has to be equal to no. of node features
+        n_point = [3, 4, 5, 6]  # For HypergraphConv layer, has to be equal to no. of node features
 
         # Construct the N-point hyperedges.
         start_time = time.perf_counter()
         hyperedge_index, hyperedge_attr = construct_n_point_hyperedges(num_nodes, old_x, additional_hypergraph_attrs, n=n_point, eec2=np.array(list(additional_edge_attrs[0].get_hist_errs(0, False)[0])))
+        hyperedge_index = hyperedge_index.to_dense().type(torch.int)  # Convert to full binary coincidence matrix (dense tensor)
         end_time = time.perf_counter()
         print(f"Time taken to construct hyperedges: {end_time - start_time:.2f} seconds.")
         print(hyperedge_index, hyperedge_attr, hyperedge_index.shape, hyperedge_attr.shape)
-        exit()
+        print(node_features.shape, edge_indices_long.shape, edge_features_tensor.shape, graph_label.shape)
 
     # Construct graph as PyG data object
     if additional_edge_attrs and additional_hypergraph_attrs:
@@ -469,4 +471,4 @@ def _construct_particle_graph_pyg(
     return graph
 
 
-_construct_particle_graphs_pyg("./graph_objects/particle_graphs/.", ['fully_connected'], 2000, dataset='jetnet', recluster_jets=False, eec_prop=[[2, 3, 4, 5, 6, 7, 8, 9], 200, (1e-3, 1)], additional_edge_attrs='eec_without_charges', additional_hypergraph_attrs='n_point_hyperedges')
+_construct_particle_graphs_pyg("./graph_objects/particle_graphs/.", ['fully_connected'], 2000, dataset='jetnet', recluster_jets=False, eec_prop=[[2, 3, 4, 5, 6], 60, (1e-3, 1)], additional_edge_attrs='eec_without_charges', additional_hypergraph_attrs='n_point_hyperedges')
