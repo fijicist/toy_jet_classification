@@ -12,6 +12,7 @@ from torch_geometric.loader import DataLoader
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
+from utils import custom_collate_fn
 
 class GATHypergraphNet(torch.nn.Module):
     """
@@ -26,48 +27,126 @@ class GATHypergraphNet(torch.nn.Module):
         self.gat_conv2 = GATConv(hidden_channels * 4, hidden_channels, heads=4, concat=True, dropout=dropout_rate)
 
         # HypergraphConv layers for hyperedge features
-        self.hyper_conv1 = HypergraphConv(in_channels, hidden_channels, use_attention=True, attention_mode='edge', heads=4)
-        self.hyper_conv2 = HypergraphConv(hidden_channels, hidden_channels, use_attention=True, attention_mode='edge', heads=4)
+        # Using attention with "node" mode.
+        self.hyper_conv1 = HypergraphConv(in_channels, hidden_channels, use_attention=True,
+                                          attention_mode='node', heads=4, concat=True)
+        # Update hyper_conv2 to expect input features of size hidden_channels*heads=2*4=8.
+        self.hyper_conv2 = HypergraphConv(hidden_channels * 4, hidden_channels, use_attention=True,
+                                          attention_mode='node', heads=4, concat=True)
+        # Learnable projection to map dataset hyperedge_attr from 4 -> 8 dimensions.
+        self.hyper_proj = nn.Linear(4, hidden_channels * 4)  # Here: 4 -> 8
 
         # Fully connected layers for classification
-        self.lin1 = nn.Linear(hidden_channels * 8, hidden_channels)  # Combine GAT and Hypergraph outputs
+        # Each branch now outputs 8 features per node; concatenation gives 16.
+        self.lin1 = nn.Linear(hidden_channels * 8, hidden_channels)
         self.lin2 = nn.Linear(hidden_channels, out_channels)
 
         # Dropout layer
         self.dropout = nn.Dropout(p=dropout_rate)
 
     def forward(self, data):
-        # Extract node features (x), edge index (edge_index), and hyperedge index (hyperedge_index)
-        x, edge_index, edge_features, hyperedge_index, hyperedge_features = data.x, data.edge_index, data.edge_attr, data.hyperedge_index, data.hyperedge_attr
+        # Extract node features (x), edge index (edge_index), and hyperedge information
+        x = data.x                  # shape: [30, 4]
+        edge_index = data.edge_index   # shape: [2, 870]
+        edge_features = data.edge_attr   # shape: [870, 5]
+        hyperedge_index = data.hyperedge_index.type(torch.long)  # shape: [2, 4396980]
+        hyperedge_features = data.hyperedge_attr  # shape: [767746, 4]
 
-        # Process edge features with GATConv layers
+        # Process edge features with GATConv layers:
         x_gat = self.gat_conv1(x, edge_index=edge_index, edge_attr=edge_features)
         x_gat = F.relu(x_gat)
         x_gat = self.dropout(x_gat)
         x_gat = self.gat_conv2(x_gat, edge_index=edge_index, edge_attr=edge_features)
         x_gat = F.relu(x_gat)
         x_gat = self.dropout(x_gat)
-
-        # Process hyperedge features with HypergraphConv layers
+        # Expected output of each GATConv branch: [30, hidden_channels*heads] = [30, 2*4] = [30, 8].
+ 
+        # Process hyperedge features with HypergraphConv layers:
         x_hyper = self.hyper_conv1(x, hyperedge_index=hyperedge_index, hyperedge_attr=hyperedge_features)
         x_hyper = F.relu(x_hyper)
         x_hyper = self.dropout(x_hyper)
-        x_hyper = self.hyper_conv2(x_hyper, hyperedge_index=hyperedge_index, hyperedge_attr=hyperedge_features)
+ 
+        # Project the learned hyperedge attributes down/up from 4 to 8 dimensions
+        hyperedge_features_proj = self.hyper_proj(hyperedge_features)
+        # Now hyperedge_features_proj has shape [767746, 8]
+ 
+        x_hyper = self.hyper_conv2(x_hyper, hyperedge_index=hyperedge_index, hyperedge_attr=hyperedge_features_proj)
         x_hyper = F.relu(x_hyper)
         x_hyper = self.dropout(x_hyper)
-
-        # Combine GAT and Hypergraph outputs
+        # Expected output of the hypergraph branch: [30, 8].
+ 
+        # Combine GAT and Hypergraph outputs: [30, 8] concatenated with [30, 8] gives [30, 16]
         x_combined = torch.cat([x_gat, x_hyper], dim=1)
-
+ 
         # Global pooling to reduce each graph into a feature vector
-        x_pooled = global_mean_pool(x_combined, data.batch)
-
+        x_pooled = global_mean_pool(x_combined, data.batch)  # Expect shape: [batch_size, 16]
+ 
         # Fully connected layers for classification
         x_out = F.relu(self.lin1(x_pooled))
         x_out = self.dropout(x_out)
         x_out = self.lin2(x_out)
-
+ 
         return F.softmax(x_out, dim=1)
+
+
+# class GATHypergraphNet(torch.nn.Module):
+#     """
+#     A model that processes edge features using GATConv layers and hypergraph features
+#     using HypergraphConv layers, then combines the results for jet classification.
+#     """
+#     def __init__(self, in_channels, hidden_channels, out_channels, dropout_rate=0.5):
+#         super(GATHypergraphNet, self).__init__()
+#
+#         # GATConv layers for edge features
+#         self.gat_conv1 = GATConv(in_channels, hidden_channels, heads=4, concat=True, dropout=dropout_rate)
+#         self.gat_conv2 = GATConv(hidden_channels * 4, hidden_channels, heads=4, concat=True, dropout=dropout_rate)
+#
+#         # HypergraphConv layers for hyperedge features
+#         self.hyper_conv1 = HypergraphConv(in_channels, hidden_channels, use_attention=True, attention_mode='node', heads=4)
+#         self.hyper_conv2 = HypergraphConv(hidden_channels * 4, hidden_channels, use_attention=True, attention_mode='node', heads=4)
+#
+#         # Fully connected layers for classification
+#         self.lin1 = nn.Linear(hidden_channels * 8, hidden_channels)  # Combine GAT and Hypergraph outputs
+#         self.lin2 = nn.Linear(hidden_channels, out_channels)
+#
+#         # Dropout layer
+#         self.dropout = nn.Dropout(p=dropout_rate)
+#
+#     def forward(self, data):
+#         # Extract node features (x), edge index (edge_index), and hyperedge index (hyperedge_index)
+#         x, edge_index, edge_features, hyperedge_index, hyperedge_features = data.x, data.edge_index, data.edge_attr, data.hyperedge_index, data.hyperedge_attr
+#         hyperedge_index = hyperedge_index.type(torch.long)
+#
+#         # Process edge features with GATConv layers
+#         x_gat = self.gat_conv1(x, edge_index=edge_index, edge_attr=edge_features)
+#         x_gat = F.relu(x_gat)
+#         x_gat = self.dropout(x_gat)
+#         x_gat = self.gat_conv2(x_gat, edge_index=edge_index, edge_attr=edge_features)
+#         x_gat = F.relu(x_gat)
+#         x_gat = self.dropout(x_gat)
+#
+#         # Process hyperedge features with HypergraphConv layers
+#         x_hyper = self.hyper_conv1(x, hyperedge_index=hyperedge_index, hyperedge_attr=hyperedge_features)
+#         x_hyper = F.relu(x_hyper)
+#         x_hyper = self.dropout(x_hyper)
+#         x_hyper = self.hyper_conv2(x_hyper, hyperedge_index=hyperedge_index, hyperedge_attr=hyperedge_features)
+#         x_hyper = F.relu(x_hyper)
+#         x_hyper = self.dropout(x_hyper)
+#
+#         # Combine GAT and Hypergraph outputs
+#         x_combined = torch.cat([x_gat, x_hyper], dim=1)
+#
+#         # Global pooling to reduce each graph into a feature vector
+#         x_pooled = global_mean_pool(x_combined, data.batch)
+#
+#         print(x_pooled.shape)
+#
+#         # Fully connected layers for classification
+#         x_out = F.relu(self.lin1(x_pooled))
+#         x_out = self.dropout(x_out)
+#         x_out = self.lin2(x_out)
+#
+#         return F.softmax(x_out, dim=1)
 
 
 class GAT(torch.nn.Module):
@@ -318,16 +397,54 @@ class MLAnalysis:
                 # Free memory after loading each .pt file 
                 del part
                 gc.collect()
-        
+
         dataset_size = len(dataset_parts)
         train_size = int(0.8 * dataset_size)
         test_size = dataset_size - train_size
         train_dataset, test_dataset = random_split(dataset_parts, [train_size, test_size])
         
-        self.train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
-        self.test_loader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False)
-        
+        # for i, data in enumerate(dataset_parts):
+        #     print(f"Graph {i}:")
+        #     if hasattr(data, 'x'):
+        #         print(f"  x shape: {data.x.shape}")
+        #     if hasattr(data, 'hyperedge_attr'):
+        #         print(f"  hyperedge_attr shape: {data.hyperedge_attr.shape}")
+        #     if hasattr(data, 'hyperedge_index'):
+        #         print(f"  hyperedge_index shape: {data.hyperedge_index.shape}")
+        #     print("---")
+
+        # # Define the desired fixed feature size for nodes
+        # fixed_node_feature_size = max([data.x.shape[1] for data in dataset_parts])
+
+        # # Pad or truncate node features
+        # for data in dataset_parts:
+        #     if data.x.shape[1] < fixed_node_feature_size:
+        #         # Pad with zeros
+        #         padding = fixed_node_feature_size - data.x.shape[1]
+        #         data.x = torch.cat([data.x, torch.zeros(data.x.shape[0], padding)], dim=1)
+        #     elif data.x.shape[1] > fixed_node_feature_size:
+        #         # Truncate excess features
+        #         data.x = data.x[:, :fixed_node_feature_size]
+        #
+        # # Define the desired fixed feature size for hyperedges
+        # fixed_hyperedge_feature_size = max([data.hyperedge_attr.shape[1] for data in dataset_parts])
+        #
+        # # Pad or truncate hyperedge attributes
+        # for data in dataset_parts:
+        #     if data.hyperedge_attr.shape[1] < fixed_hyperedge_feature_size:
+        #         # Pad with zeros
+        #         padding = fixed_hyperedge_feature_size - data.hyperedge_attr.shape[1]
+        #         data.hyperedge_attr = torch.cat([data.hyperedge_attr, torch.zeros(data.hyperedge_attr.shape[0], padding)], dim=1)
+        #     elif data.hyperedge_attr.shape[1] > fixed_hyperedge_feature_size:
+        #         # Truncate excess features
+        #         data.hyperedge_attr = data.hyperedge_attr[:, :fixed_hyperedge_feature_size]
+
         del dataset_parts
+        gc.collect()
+
+        self.train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, collate_fn=custom_collate_fn)
+        self.test_loader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False, collate_fn=custom_collate_fn)
+
         del train_dataset
         del test_dataset
         gc.collect()
@@ -343,7 +460,10 @@ class MLAnalysis:
         correct = 0
         for data in loader:
             data = data.to(self.device)
-            out = self.model.forward(data.x, data.edge_index, data.batch)
+            if self.model.__class__.__name__ == "GATHypergraphNet":
+                out = self.model.forward(data)
+            else:
+                out = self.model.forward(data.x, data.edge_index, data.batch)
             pred = out.argmax(dim=1)
             correct += int((pred == data.y).sum())
         accuracy = correct / len(loader.dataset)
@@ -368,7 +488,10 @@ class MLAnalysis:
 
             for test_data in self.test_loader:
                 test_data = test_data.to(self.device)
-                out = self.model.forward(test_data.x, test_data.edge_index, test_data.batch)
+                if self.model.__class__.__name__ == "GATHypergraphNet":
+                    out = self.model.forward(test_data)
+                else:
+                    out = self.model.forward(test_data.x, test_data.edge_index, test_data.batch)
                 test_loss = self.criterion(out, test_data.y.long())
                 self.test_losses[epoch] += test_loss.item()
                 self.test_losses[epoch] /= len(self.test_loader)
@@ -402,11 +525,14 @@ class MLAnalysis:
         with torch.no_grad():
             for batch in self.test_loader:
                 batch = batch.to(self.device)
-                pred_graph = self.model.forward(batch.x, batch.edge_index, batch.batch)
+                if self.model.__class__.__name__ == "GATHypergraphNet":
+                    pred_graph = self.model.forward(batch)
+                else:
+                    pred_graph = self.model.forward(batch.x, batch.edge_index, batch.batch)
                 pred_graphs_list.append(pred_graph.cpu().data.numpy())
                 label_graphs_list.append(batch.y.cpu().data.numpy())
-            pred_graphs = np.concatenate(pred_graphs_list, axis=0)
-            label_graphs = np.concatenate(label_graphs_list, axis=0)
+                pred_graphs = np.concatenate(pred_graphs_list, axis=0)
+                label_graphs = np.concatenate(label_graphs_list, axis=0)
             auc = metrics.roc_auc_score(label_graphs, pred_graphs[:,1])
             roc_curve = metrics.roc_curve(label_graphs, pred_graphs[:,1])
 
@@ -464,7 +590,7 @@ class MLAnalysis:
         plt.savefig("./metrics_plot/metrics_plot"+"_"+str(self.input_dim)+"_"+\
             str(self.hidden_dim)+"_"+str(self.model.__class__.__name__)+"_"+str(self.batch_size)+"_"+str(self.learning_rate)+".png")
 
-analysis = MLAnalysis(4, 32, 2, model="GATHyper", batch_size=32, learning_rate=0.0001, epochs=100)
+analysis = MLAnalysis(4, 2, 2, model="GATHyper", batch_size=1, learning_rate=0.01, epochs=10)
 
 analysis.load_data()
 

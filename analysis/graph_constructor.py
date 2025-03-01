@@ -175,7 +175,7 @@ def _construct_particle_graphs_pyg(
         print(f'Constructing PyG particle graphs from JetNet dataset...')
 
         # Load dataset
-        X, y = JetNet(**data_args_jetnet)[:100]
+        X, y = JetNet(**data_args_jetnet)[:20]
         X = X.numpy()
         y = y.numpy()#[:, 0].astype(int)
 
@@ -268,19 +268,19 @@ def _construct_particle_graphs_pyg(
 
     # Calculate EnergyEnergyCorrelation (EEC) features
     if additional_edge_attrs == 'eec_with_charges':
-        print(f'  Calculating EEC features with charges...')
+        print("  Calculating EEC features with charges...")
         additional_edge_attrs = []
         if eec_prop[0][0] == 2:
             additional_edge_attrs.append(get_eec_ls_values(old_X, N=eec_prop[0][0], bins=eec_prop[1], axis_range=eec_prop[2]))
 
     if additional_edge_attrs == 'eec_without_charges':
-        print(f'  Calculating EEC features without charges...')
+        print("  Calculating EEC features without charges...")
         additional_edge_attrs = []
         if eec_prop[0][0] == 2:
             additional_edge_attrs.append(get_eec_ls_values(old_X, N=eec_prop[0][0], bins=eec_prop[1], axis_range=eec_prop[2]))
 
     if additional_hypergraph_attrs == 'n_point_hyperedges':
-        print(f'  Calculating EEC features for hyperedges...')
+        print("  Calculating EEC features for hyperedges...")
         additional_hypergraph_attrs = []
         for i in eec_prop[0]:
             if i == 2:

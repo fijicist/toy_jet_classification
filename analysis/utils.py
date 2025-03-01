@@ -9,6 +9,17 @@ from sklearn.preprocessing import OneHotEncoder
 from joblib import Parallel, delayed, Memory
 import numba as nb
 
+from torch_geometric.data import Batch 
+
+def custom_collate_fn(data_list):
+    max_node_features = max([data.x.size(1) for data in data_list])
+    
+    for data in data_list:
+        if data.x.size(1) < max_node_features:
+            padding = max_node_features - data.x.size(1)
+            data.x = torch.cat([data.x, torch.zeros(data.x.size(0), padding)], dim=1)
+    return Batch.from_data_list(data_list)
+
 # Set up shared memory for large arrays
 memory = Memory(location='/tmp/joblib_cache', verbose=0)
 
@@ -160,21 +171,30 @@ def construct_n_point_hyperedges(num_nodes, old_x, additional_hypergraph_attrs, 
 
     total_hyperedges = len(all_hyperedges)
     
-    # Build the sparse incidence matrix.
+    # # Build the sparse incidence matrix.
+    # row_indices = []
+    # col_indices = []
+    # for hyperedge_id, hyperedge in enumerate(all_hyperedges):
+    #     for node in hyperedge:
+    #         row_indices.append(node)
+    #         col_indices.append(hyperedge_id)
+    # 
+    # indices = torch.tensor([row_indices, col_indices], dtype=torch.long)
+    # values = torch.ones(indices.shape[1], dtype=torch.float32)
+    # 
+    # # Create a sparse COO tensor for the incidence matrix
+    # hyperedge_index = torch.sparse_coo_tensor(indices, values,
+    #                                           size=(num_nodes, total_hyperedges))
+    
+    # Build the hyperedge index as a [2, N] tensor.
     row_indices = []
     col_indices = []
     for hyperedge_id, hyperedge in enumerate(all_hyperedges):
         for node in hyperedge:
             row_indices.append(node)
             col_indices.append(hyperedge_id)
-    
-    indices = torch.tensor([row_indices, col_indices], dtype=torch.long)
-    values = torch.ones(indices.shape[1], dtype=torch.float32)
-    
-    # Create a sparse COO tensor for the incidence matrix
-    hyperedge_index = torch.sparse_coo_tensor(indices, values,
-                                              size=(num_nodes, total_hyperedges))
-    
+    hyperedge_index = torch.tensor([row_indices, col_indices], dtype=torch.long)
+
     # Convert the list of hyperedge attributes to a tensor
     hyperedge_attr = torch.tensor(all_hyperedge_attrs, dtype=torch.float32)
     
